@@ -357,6 +357,36 @@ void magnetometerEmulatorThread(int master_fd, const std::string& port_name, int
     }
 }
 
+// Función para limpiar symlinks existentes
+void cleanupPorts() {
+    struct stat st;
+
+    // Limpiar /dev/ttyAMA0
+    if (lstat("/dev/ttyAMA0", &st) == 0) {
+        if (S_ISLNK(st.st_mode)) {
+            // Es un symlink, eliminarlo
+            unlink("/dev/ttyAMA0");
+            std::cout << "Limpiado symlink anterior: /dev/ttyAMA0" << std::endl;
+        }
+    }
+
+    // Limpiar /dev/ttyAMA2
+    if (lstat("/dev/ttyAMA2", &st) == 0) {
+        if (S_ISLNK(st.st_mode)) {
+            unlink("/dev/ttyAMA2");
+            std::cout << "Limpiado symlink anterior: /dev/ttyAMA2" << std::endl;
+        }
+    }
+
+    // Limpiar /dev/ttyAMA4
+    if (lstat("/dev/ttyAMA4", &st) == 0) {
+        if (S_ISLNK(st.st_mode)) {
+            unlink("/dev/ttyAMA4");
+            std::cout << "Limpiado symlink anterior: /dev/ttyAMA4" << std::endl;
+        }
+    }
+}
+
 // Crear puerto serial virtual
 int createVirtualPort(const std::string& symlink_path) {
     int master_fd, slave_fd;
@@ -364,7 +394,7 @@ int createVirtualPort(const std::string& symlink_path) {
 
     // Verificar si el archivo existe y hacer backup si es necesario
     struct stat st;
-    if (stat(symlink_path.c_str(), &st) == 0) {
+    if (lstat(symlink_path.c_str(), &st) == 0) {
         std::cout << "ADVERTENCIA: " << symlink_path << " ya existe." << std::endl;
 
         // Si es un dispositivo real (character device), hacer backup
@@ -372,8 +402,12 @@ int createVirtualPort(const std::string& symlink_path) {
             std::string backup_path = symlink_path + ".backup";
             std::cout << "Es un dispositivo real. Renombrando a " << backup_path << std::endl;
             rename(symlink_path.c_str(), backup_path.c_str());
+        } else if (S_ISLNK(st.st_mode)) {
+            // Si es un symlink, simplemente eliminarlo
+            std::cout << "Es un symlink anterior. Eliminando..." << std::endl;
+            unlink(symlink_path.c_str());
         } else {
-            // Si es un symlink o archivo, simplemente eliminarlo
+            // Si es otro tipo de archivo, eliminarlo
             unlink(symlink_path.c_str());
         }
     }
@@ -419,7 +453,7 @@ int createVirtualPort(const std::string& symlink_path) {
 
 // Manejador de señal para salida limpia
 void signalHandler(int signum) {
-    std::cout << "\nRecibida señal " << signum << ". Terminando..." << std::endl;
+    std::cout << "\nRecibida senal " << signum << ". Terminando..." << std::endl;
     running = false;
 }
 
@@ -427,17 +461,17 @@ void signalHandler(int signum) {
 void showControlMenu() {
     std::cout << "\n=== SIMULADOR QUSPIN v2 Y GPS ===" << std::endl;
     std::cout << "Puertos virtuales activos:" << std::endl;
-    std::cout << "  - GPS:          /dev/ttyAMA0" << std::endl;
-    std::cout << "  - Magnetómetro 1: /dev/ttyAMA2" << std::endl;
-    std::cout << "  - Magnetómetro 2: /dev/ttyAMA4" << std::endl;
+    std::cout << "  - GPS:            /dev/ttyAMA0" << std::endl;
+    std::cout << "  - Magnetometro 1: /dev/ttyAMA2" << std::endl;
+    std::cout << "  - Magnetometro 2: /dev/ttyAMA4" << std::endl;
     std::cout << "\nComandos:" << std::endl;
-    std::cout << "  i - Toggle magnetómetros idénticos/Y-splitter (actual: "
-              << (identical_magnetometers ? "SÍ - IDÉNTICOS" : "NO - INDEPENDIENTES") << ")" << std::endl;
-    std::cout << "  m - Mostrar este menú" << std::endl;
+    std::cout << "  i - Toggle magnetometros identicos/Y-splitter (actual: "
+              << (identical_magnetometers ? "SI - IDENTICOS" : "NO - INDEPENDIENTES") << ")" << std::endl;
+    std::cout << "  m - Mostrar este menu" << std::endl;
     std::cout << "  q - Salir" << std::endl;
-    std::cout << "\nConfiguración actual:" << std::endl;
+    std::cout << "\nConfiguracion actual:" << std::endl;
     std::cout << "  - GPS: 9600 baud, 8N1" << std::endl;
-    std::cout << "  - Magnetómetros: 115200 baud, 8N1" << std::endl;
+    std::cout << "  - Magnetometros: 115200 baud, 8N1" << std::endl;
     std::cout << "  - Datacount: 0-498 (incrementa de 2 en 2)" << std::endl;
     std::cout << "  - Timestamp: incrementa de 4 en 4 ms" << std::endl;
     std::cout << "\nPara probar en otra terminal:" << std::endl;
@@ -462,13 +496,13 @@ void userInputThread() {
             running = false;
         } else if (input == "i") {
             identical_magnetometers = !identical_magnetometers;
-            std::cout << "\n*** Magnetómetros configurados como: "
-                      << (identical_magnetometers ? "IDÉNTICOS (Y-splitter)" : "INDEPENDIENTES")
+            std::cout << "\n*** Magnetometros configurados como: "
+                      << (identical_magnetometers ? "IDENTICOS (Y-splitter)" : "INDEPENDIENTES")
                       << " ***" << std::endl;
             if (identical_magnetometers) {
-                std::cout << "Ambos magnetómetros ahora emiten exactamente los mismos datos." << std::endl;
+                std::cout << "Ambos magnetometros ahora emiten exactamente los mismos datos." << std::endl;
             } else {
-                std::cout << "Cada magnetómetro genera datos independientes con ruido propio." << std::endl;
+                std::cout << "Cada magnetometro genera datos independientes con ruido propio." << std::endl;
             }
             std::cout << std::endl;
         } else if (input == "m") {
@@ -490,13 +524,18 @@ int main() {
     signal(SIGTERM, signalHandler);
 
     std::cout << "=== INICIANDO SIMULADOR EN RASPBERRY PI 5 ===" << std::endl;
-    std::cout << "NOTA: Este simulador creará puertos virtuales en:" << std::endl;
+    std::cout << "NOTA: Este simulador creara puertos virtuales en:" << std::endl;
     std::cout << "  /dev/ttyAMA0 (GPS)" << std::endl;
-    std::cout << "  /dev/ttyAMA2 (Magnetómetro 1)" << std::endl;
-    std::cout << "  /dev/ttyAMA4 (Magnetómetro 2)" << std::endl;
-    std::cout << "\nSi tienes hardware real conectado, este será temporalmente deshabilitado." << std::endl;
-    std::cout << "Los dispositivos originales serán restaurados al salir del simulador.\n" << std::endl;
-    std::cout << "Presiona ENTER para continuar o Ctrl+C para cancelar..." << std::endl;
+    std::cout << "  /dev/ttyAMA2 (Magnetometro 1)" << std::endl;
+    std::cout << "  /dev/ttyAMA4 (Magnetometro 2)" << std::endl;
+    std::cout << "\nSi tienes hardware real conectado, este sera temporalmente deshabilitado." << std::endl;
+    std::cout << "Los dispositivos originales seran restaurados al salir del simulador.\n" << std::endl;
+
+    // Limpiar puertos anteriores
+    std::cout << "Limpiando puertos anteriores..." << std::endl;
+    cleanupPorts();
+
+    std::cout << "\nPresiona ENTER para continuar o Ctrl+C para cancelar..." << std::endl;
     std::cin.get();
     std::cout << "Creando puertos virtuales..." << std::endl;
 
@@ -507,6 +546,8 @@ int main() {
 
     if (gps_fd == -1 || mag1_fd == -1 || mag2_fd == -1) {
         std::cerr << "Error al crear puertos virtuales" << std::endl;
+        // Limpiar lo que se haya creado
+        cleanupPorts();
         return 1;
     }
 
