@@ -329,7 +329,7 @@ void magnetometerEmulatorThread(int master_fd, const std::string& port_name, int
         }
 
         // Generar línea de datos
-        std::string data_line = generateQuSpinLine(quspin_data) + "\r\n";
+        std::string data_line = generateQuSpinLine(quspin_data) + "\n";
 
         // Escribir al puerto
         write(master_fd, data_line.c_str(), data_line.length());
